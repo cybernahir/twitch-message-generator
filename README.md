@@ -7,6 +7,9 @@ un mensaje idéntico a los que aparecen en el chat de Twitch —con nombre de us
 insignias y emotes del canal— y descargarlo como imagen PNG lista para usar en redes,
 miniaturas, overlays o clips.
 
+La herramienta es privada: una edge function de Netlify pide una contraseña antes de servir
+cualquier archivo del sitio. Ver [Acceso con contraseña](#acceso-con-contraseña).
+
 ---
 
 ## Características
@@ -27,7 +30,8 @@ miniaturas, overlays o clips.
 
 ## Cómo usarlo
 
-No requiere instalación ni servidor de build. Alcanza con abrir el proyecto en un servidor estático.
+No requiere instalación ni servidor de build. Para trabajar en la herramienta alcanza con
+cualquier servidor estático; para probar además el login hace falta la CLI de Netlify.
 
 ### Opción 1 — Live Server (VS Code)
 
@@ -36,17 +40,23 @@ El proyecto ya trae la configuración en [.vscode/settings.json](.vscode/setting
 1. Instalar la extensión **Live Server**.
 2. Clic derecho sobre `index.html` → *Open with Live Server*.
 
+El gate no corre acá: Live Server sirve los archivos directo, sin pedir contraseña. Sirve para
+maquetar, no para probar el acceso.
+
 ### Opción 2 — XAMPP / Apache
 
 Ubicar la carpeta dentro de `htdocs` y entrar a `http://localhost/cybernahir/twitch-message-generator/`.
+Tampoco corre el gate.
 
-### Opción 3 — Cualquier servidor estático
+### Opción 3 — Netlify CLI (el gate incluido)
 
 ```bash
-python -m http.server 5501
-# o
-npx serve .
+npm install -g netlify-cli
+netlify dev
 ```
+
+`netlify dev` levanta el sitio con la edge function y toma la contraseña del archivo `.env`,
+así que es la forma de probar el login tal como va a funcionar en producción.
 
 > **Nota:** conviene servirlo por HTTP y no abrir el `index.html` directamente con `file://`,
 > porque `html2canvas` necesita cargar las imágenes de las insignias y emotes con CORS
@@ -54,11 +64,76 @@ npx serve .
 
 ### Flujo de uso
 
-1. Escribir el nombre de usuario.
-2. Elegir el color del nombre (paleta, hex o color picker).
-3. Escribir el mensaje. Si incluye el nombre de un emote soportado, se convierte solo.
-4. Activar las insignias que correspondan.
-5. Revisar la vista previa y presionar **Descargar mensaje (.png)**.
+1. Entrar con la contraseña.
+2. Escribir el nombre de usuario.
+3. Elegir el color del nombre (paleta, hex o color picker).
+4. Escribir el mensaje. Si incluye el nombre de un emote soportado, se convierte solo.
+5. Activar las insignias que correspondan.
+6. Revisar la vista previa y presionar **Descargar mensaje (.png)**.
+
+---
+
+## Acceso con contraseña
+
+La página no muestra nada hasta que se ingresa la contraseña correcta.
+
+### Configurarla en Netlify (producción)
+
+1. En el panel del sitio: **Site configuration → Environment variables → Add a variable**.
+2. Key `APP_PASSWORD`, value la contraseña que quieras.
+3. Volver a desplegar (**Deploys → Trigger deploy**) para que la edge function tome el valor.
+
+Para cambiarla, se edita la variable y se vuelve a desplegar. Al cambiarla, las sesiones ya
+abiertas dejan de valer automáticamente y hay que entrar de nuevo.
+
+### Configurarla en local
+
+Crear el archivo `.env` en la raíz del proyecto (se puede copiar `.env.example`) con la misma
+línea. `netlify dev` lo lee solo:
+
+```ini
+APP_PASSWORD=la-contraseña-que-quieras
+```
+
+El `.env` está en [.gitignore](.gitignore), así que no se sube al repo ni a Netlify.
+
+### Cómo funciona
+
+- [netlify/edge-functions/auth.js](netlify/edge-functions/auth.js) está declarada en
+  [netlify.toml](netlify.toml) sobre la ruta `/*`, así que corre **antes** de servir cualquier
+  archivo. Si la sesión no está autenticada, devuelve la pantalla de login y nunca llama a
+  `next()`: el HTML de la herramienta no llega al navegador. Las imágenes y el CSS también
+  quedan detrás del gate.
+- La contraseña vive solo en la variable de entorno. No viaja al cliente ni queda en el JS, y la
+  comparación se hace sobre hashes para no filtrar el largo por timing.
+- La sesión es una cookie `HttpOnly` firmada con HMAC-SHA256, válida 30 días. La clave de la
+  firma es la propia contraseña: por eso cambiarla invalida las sesiones viejas. El botón
+  **Salir** del header la borra.
+- Las respuestas protegidas salen con `Cache-Control: private`, para que la CDN no guarde una
+  copia del contenido y se la sirva a alguien sin sesión.
+- La pantalla de login no depende de `style.css` (que también está bloqueado): lleva sus propios
+  estilos, los mismos de la herramienta.
+
+> **Sobre el límite de intentos:** después de 5 intentos fallidos el formulario se bloquea 5
+> minutos, pero ese contador vive en una cookie firmada. Frena a alguien probando a mano en su
+> navegador; no frena a quien borre las cookies entre intento e intento. En las edge functions
+> no hay estado compartido donde llevar la cuenta de verdad, así que la defensa real es que la
+> contraseña sea larga. Si llega a hacer falta un límite serio, se puede agregar con Netlify
+> Blobs.
+
+---
+
+## Despliegue en Netlify
+
+1. Subir el repo a GitHub.
+2. En Netlify: **Add new site → Import an existing project**, y elegir el repo.
+3. Dejar el build command vacío y el publish directory en `.` (ya está en
+   [netlify.toml](netlify.toml)).
+4. Cargar la variable `APP_PASSWORD` antes del primer deploy, o volver a desplegar después de
+   cargarla.
+
+Netlify detecta la edge function sola por estar en `netlify/edge-functions/`. No hay build ni
+dependencias que instalar.
 
 ---
 
@@ -67,6 +142,12 @@ npx serve .
 ```
 twitch-message-generator/
 ├── index.html          # Markup + toda la lógica JS (badges, emotes, render y captura)
+├── netlify.toml        # Publish directory y ruta de la edge function
+├── netlify/
+│   └── edge-functions/
+│       └── auth.js     # Gate: login, cookie de sesión y pantalla de acceso
+├── .env                # Contraseña para `netlify dev` (no se versiona)
+├── .env.example        # Plantilla del .env
 ├── style.css           # Estilos y variables de tema (claro/oscuro)
 ├── favicon.ico
 ├── icons-sub/          # Insignias de suscripción del canal (0 a 36 meses)

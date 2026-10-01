@@ -1,0 +1,8 @@
+# El sitio es estatico: no hay build, se publica la raiz del repo.
+[build]
+  publish = "."
+
+# El gate corre antes de servir cualquier archivo, incluidas las imagenes.
+[[edge_functions]]
+  path = "/*"
+  function = "auth"
