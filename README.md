@@ -24,6 +24,10 @@ cualquier archivo del sitio. Ver [Acceso con contraseña](#acceso-con-contraseñ
   - Emotes globales/clásicos mapeados a emoji: `Kappa`, `4Head`, `OMEGALUL`, `PepeHands`, `Sadge`, `monkaS`, `EZ`, `HeyGuys`, `BibleThump`, `ResidentSleeper`, `FeelsBadMan`, `FeelsGoodMan`, `DansGame`.
 - **Modo claro / oscuro**, con la paleta de colores de Twitch en ambos temas.
 - **Descarga en PNG** del mensaje renderizado, capturado con `html2canvas` a escala 3x (alta resolución).
+- **Formato de la imagen**, editable antes de descargar:
+  - *Ajustar ancho al texto*: en mensajes cortos la imagen se recorta al ancho del contenido en lugar de ocupar todo el panel.
+  - *Bordes redondeados*: radio de 0 a 24px; las esquinas salen transparentes en el PNG.
+  - La vista previa muestra un damero detrás del mensaje para ver exactamente los límites de lo que se descarga.
 - **Diseño responsive**: en pantallas menores a 780px la vista previa pasa arriba del formulario.
 
 ---

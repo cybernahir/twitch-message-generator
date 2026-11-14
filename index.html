@@ -96,6 +96,24 @@
                     </div>
                 </div>
 
+                <div class="export-opts">
+                    <label class="opt-row" for="fitWidth">
+                        <span class="opt-text">
+                            <span class="opt-label">Ajustar ancho al texto</span>
+                            <span class="opt-hint">Quita el espacio sobrante en mensajes cortos</span>
+                        </span>
+                        <input type="checkbox" id="fitWidth" class="switch" checked onchange="render()" />
+                    </label>
+
+                    <div class="opt-range">
+                        <div class="opt-row">
+                            <label class="opt-label" for="radius">Bordes redondeados</label>
+                            <output id="radiusVal" for="radius">12px</output>
+                        </div>
+                        <input type="range" id="radius" min="0" max="24" step="1" value="12" oninput="render()" />
+                    </div>
+                </div>
+
                 <button class="dl-btn" onclick="downloadMsg()">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                         <path d="M12 4v12m0 0l-4-4m4 4l4-4" stroke="currentColor" stroke-width="2.2"
@@ -243,13 +261,24 @@
             });
         }
 
+        function getExportOpts() {
+            return {
+                fit: document.getElementById('fitWidth').checked,
+                radius: Number(document.getElementById('radius').value) || 0,
+            };
+        }
+
         function render() {
             const username = document.getElementById('username').value.trim() || 'Anonymous';
             const color = document.getElementById('colorHex').value || '#9147ff';
             const text = document.getElementById('msgText').value.trim();
             const el = document.getElementById('msgRender');
+            const { fit, radius } = getExportOpts();
 
             el.style.background = getBgCss();
+            el.classList.toggle('fit', fit);
+            el.style.borderRadius = radius + 'px';
+            document.getElementById('radiusVal').textContent = radius + 'px';
 
             if (!text) {
                 el.innerHTML = '<span style="color:#6e6e83;font-size:.8rem;">Escribe algo para ver la vista previa…</span>';
@@ -285,15 +314,51 @@
 
             const el = document.getElementById('msgRender');
             const bgColor = getBgColor(); // null if transparent
+            const { radius } = getExportOpts();
+            const SCALE = 3;
 
-            return html2canvas(el, {
-                backgroundColor: bgColor,
-                scale: 3,
-                useCORS: true,
-                allowTaint: false,
-                logging: false,
-                imageTimeout: 8000,
-            });
+            // Fijamos el ancho en px enteros mientras se captura: con "ajustar al texto"
+            // el ancho es fraccionario y html2canvas podría partir la última palabra.
+            const prevWidth = el.style.width;
+            el.style.width = Math.ceil(el.getBoundingClientRect().width) + 'px';
+
+            let shot;
+            try {
+                shot = await html2canvas(el, {
+                    backgroundColor: bgColor,
+                    scale: SCALE,
+                    useCORS: true,
+                    allowTaint: false,
+                    logging: false,
+                    imageTimeout: 8000,
+                });
+            } finally {
+                el.style.width = prevWidth;
+            }
+
+            if (!radius) return shot;
+
+            // html2canvas rellena todo el lienzo con backgroundColor, así que las esquinas
+            // se recortan acá: lo que queda fuera del rectángulo redondeado sale transparente.
+            const out = document.createElement('canvas');
+            out.width = shot.width;
+            out.height = shot.height;
+            const ctx = out.getContext('2d');
+            roundedRectPath(ctx, out.width, out.height, radius * SCALE);
+            ctx.clip();
+            ctx.drawImage(shot, 0, 0);
+            return out;
+        }
+
+        function roundedRectPath(ctx, w, h, r) {
+            r = Math.min(r, w / 2, h / 2); // igual que CSS: el radio no pasa de la mitad del lado
+            ctx.beginPath();
+            ctx.moveTo(r, 0);
+            ctx.arcTo(w, 0, w, h, r);
+            ctx.arcTo(w, h, 0, h, r);
+            ctx.arcTo(0, h, 0, 0, r);
+            ctx.arcTo(0, 0, w, 0, r);
+            ctx.closePath();
         }
 
 
