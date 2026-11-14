@@ -25,8 +25,8 @@ cualquier archivo del sitio. Ver [Acceso con contraseña](#acceso-con-contraseñ
 - **Modo claro / oscuro**, con la paleta de colores de Twitch en ambos temas.
 - **Descarga en PNG** del mensaje renderizado, capturado con `html2canvas` a escala 3x (alta resolución).
 - **Formato de la imagen**, editable antes de descargar:
-  - *Ajustar ancho al texto*: en mensajes cortos la imagen se recorta al ancho del contenido en lugar de ocupar todo el panel.
-  - *Bordes redondeados*: radio de 0 a 24px; las esquinas salen transparentes en el PNG.
+  - *Tamaño*: por defecto la caja se ajusta al texto. Se puede agrandar o achicar arrastrando las manijas del borde derecho, del borde inferior o de la esquina, o escribiendo ancho y alto en píxeles. El PNG sale con esas medidas (a escala 3x). El alto nunca baja del que necesita el texto. "Ajustar al texto" vuelve al tamaño automático.
+  - *Esquinas*: radio de 0 a 40px, con vista previa en vivo; las esquinas salen transparentes en el PNG.
   - La vista previa muestra un damero detrás del mensaje para ver exactamente los límites de lo que se descarga.
 - **Diseño responsive**: en pantallas menores a 780px la vista previa pasa arriba del formulario.
 

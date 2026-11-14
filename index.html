@@ -90,27 +90,47 @@
             <div class="card">
                 <div class="card-title">Vista previa</div>
 
-                <div class="preview-box">
-                    <div id="msgRender">
-                        <span style="color:#6e6e83;font-size:.8rem;">Escribe algo para ver la vista previa…</span>
-                    </div>
-                </div>
-
-                <div class="export-opts">
-                    <label class="opt-row" for="fitWidth">
-                        <span class="opt-text">
-                            <span class="opt-label">Ajustar ancho al texto</span>
-                            <span class="opt-hint">Quita el espacio sobrante en mensajes cortos</span>
-                        </span>
-                        <input type="checkbox" id="fitWidth" class="switch" checked onchange="render()" />
-                    </label>
-
-                    <div class="opt-range">
-                        <div class="opt-row">
-                            <label class="opt-label" for="radius">Bordes redondeados</label>
-                            <output id="radiusVal" for="radius">12px</output>
+                <div class="preview-frame">
+                    <div class="preview-box" id="previewBox">
+                        <!-- Las manijas viven fuera de #msgRender: render() reescribe su contenido
+                             y html2canvas no las captura. -->
+                        <div class="msg-stage" id="msgStage">
+                            <div id="msgRender">
+                                <span style="color:#6e6e83;font-size:.8rem;">Escribe algo para ver la vista previa…</span>
+                            </div>
+                            <span class="rs rs-e" data-dir="e" aria-hidden="true" title="Arrastrá para cambiar el ancho"></span>
+                            <span class="rs rs-s" data-dir="s" aria-hidden="true" title="Arrastrá para cambiar el alto"></span>
+                            <span class="rs rs-se" data-dir="se" aria-hidden="true" title="Arrastrá para cambiar ancho y alto"></span>
                         </div>
-                        <input type="range" id="radius" min="0" max="24" step="1" value="12" oninput="render()" />
+                    </div>
+
+                    <div class="export-opts">
+                        <div class="opt-group">
+                            <div class="opt-head">
+                                <span class="opt-label">Tamaño</span>
+                                <button type="button" class="opt-reset" id="fitBtn" onclick="resetBox()">Ajustar al texto</button>
+                            </div>
+                            <div class="size-row">
+                                <label class="num">
+                                    <span>Ancho</span>
+                                    <input type="number" id="boxW" min="60" step="1" inputmode="numeric" aria-label="Ancho en píxeles" />
+                                </label>
+                                <span class="size-x">×</span>
+                                <label class="num">
+                                    <span>Alto</span>
+                                    <input type="number" id="boxH" min="0" step="1" inputmode="numeric" aria-label="Alto en píxeles" />
+                                </label>
+                                <span class="size-unit">px</span>
+                            </div>
+                        </div>
+
+                        <div class="opt-group">
+                            <div class="opt-head">
+                                <label class="opt-label" for="radius">Esquinas</label>
+                                <output id="radiusVal" for="radius">12px</output>
+                            </div>
+                            <input type="range" id="radius" class="slider" min="0" max="40" step="1" value="12" />
+                        </div>
                     </div>
                 </div>
 
@@ -178,6 +198,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             buildDots();
             buildBadges();
+            initBoxControls();
             render();
         });
 
@@ -261,27 +282,125 @@
             });
         }
 
-        function getExportOpts() {
-            return {
-                fit: document.getElementById('fitWidth').checked,
-                radius: Number(document.getElementById('radius').value) || 0,
+        // Tamaño de la caja del mensaje. null = automático (se ajusta al contenido).
+        const box = { w: null, h: null };
+        const BOX_MIN_W = 80;
+        const BOX_MAX_H = 480;
+        const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+        const msgEl = () => document.getElementById('msgRender');
+
+        function getRadius() {
+            return Number(document.getElementById('radius').value) || 0;
+        }
+
+        // Ancho disponible dentro del lienzo de la vista previa.
+        function maxBoxW() {
+            const pb = document.getElementById('previewBox');
+            const cs = getComputedStyle(pb);
+            return Math.floor(pb.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight));
+        }
+
+        function applyBox() {
+            const el = msgEl();
+            el.classList.toggle('fit', box.w === null);
+            el.style.width = box.w === null ? '' : Math.min(box.w, maxBoxW()) + 'px';
+            // min-height y no height: si el texto necesita más alto, la caja crece y nunca lo corta.
+            el.style.minHeight = box.h === null ? '' : box.h + 'px';
+            syncSizeInputs();
+        }
+
+        // Los campos muestran siempre el tamaño real de la caja (el que va a tener el PNG),
+        // salvo el que se está editando en ese momento.
+        function syncSizeInputs() {
+            const r = msgEl().getBoundingClientRect();
+            [['boxW', r.width], ['boxH', r.height]].forEach(([id, v]) => {
+                const inp = document.getElementById(id);
+                if (document.activeElement !== inp) inp.value = Math.round(v);
+            });
+            document.getElementById('fitBtn').disabled = box.w === null && box.h === null;
+        }
+
+        function resetBox() {
+            box.w = null;
+            box.h = null;
+            applyBox();
+        }
+
+        function onRadiusInput() {
+            const slider = document.getElementById('radius');
+            const r = getRadius();
+            msgEl().style.borderRadius = r + 'px';
+            document.getElementById('radiusVal').textContent = r + 'px';
+            slider.style.setProperty('--pct', (r / Number(slider.max)) * 100 + '%');
+        }
+
+        function initBoxControls() {
+            const bindSize = (id, key, lo, hi) => {
+                const inp = document.getElementById(id);
+                inp.addEventListener('input', () => {
+                    const v = parseInt(inp.value, 10);
+                    if (Number.isFinite(v)) { box[key] = Math.round(clamp(v, lo, hi())); applyBox(); }
+                });
+                // Al salir del campo: vacío vuelve a automático; si no, se muestra el valor real.
+                inp.addEventListener('change', () => {
+                    if (inp.value.trim() === '') box[key] = null;
+                    applyBox();
+                    syncSizeInputs();
+                });
+                inp.addEventListener('blur', syncSizeInputs);
             };
+            bindSize('boxW', 'w', BOX_MIN_W, maxBoxW);
+            bindSize('boxH', 'h', 0, () => BOX_MAX_H);
+
+            document.getElementById('radius').addEventListener('input', onRadiusInput);
+            onRadiusInput();
+
+            // Manijas de arrastre: la caja está anclada arriba a la izquierda, así que
+            // el borde sigue al puntero 1:1.
+            const stage = document.getElementById('msgStage');
+            stage.querySelectorAll('.rs').forEach(handle => {
+                handle.addEventListener('pointerdown', e => {
+                    if (e.button !== 0) return;
+                    e.preventDefault();
+                    const dir = handle.dataset.dir;
+                    const r = msgEl().getBoundingClientRect();
+                    const start = { x: e.clientX, y: e.clientY, w: r.width, h: r.height };
+                    try { handle.setPointerCapture(e.pointerId); } catch { /* puntero sintético */ }
+                    stage.classList.add('resizing');
+
+                    const move = ev => {
+                        if (dir.includes('e')) box.w = Math.round(clamp(start.w + ev.clientX - start.x, BOX_MIN_W, maxBoxW()));
+                        if (dir.includes('s')) box.h = Math.round(clamp(start.h + ev.clientY - start.y, 0, BOX_MAX_H));
+                        applyBox();
+                    };
+                    const end = () => {
+                        stage.classList.remove('resizing');
+                        handle.removeEventListener('pointermove', move);
+                        handle.removeEventListener('pointerup', end);
+                        handle.removeEventListener('pointercancel', end);
+                    };
+                    handle.addEventListener('pointermove', move);
+                    handle.addEventListener('pointerup', end);
+                    handle.addEventListener('pointercancel', end);
+                });
+            });
+
+            // Las imágenes (insignias, emotes) cambian el tamaño al terminar de cargar.
+            new ResizeObserver(syncSizeInputs).observe(msgEl());
+            window.addEventListener('resize', applyBox);
         }
 
         function render() {
             const username = document.getElementById('username').value.trim() || 'Anonymous';
             const color = document.getElementById('colorHex').value || '#9147ff';
             const text = document.getElementById('msgText').value.trim();
-            const el = document.getElementById('msgRender');
-            const { fit, radius } = getExportOpts();
+            const el = msgEl();
 
             el.style.background = getBgCss();
-            el.classList.toggle('fit', fit);
-            el.style.borderRadius = radius + 'px';
-            document.getElementById('radiusVal').textContent = radius + 'px';
 
             if (!text) {
-                el.innerHTML = '<span style="color:#6e6e83;font-size:.8rem;">Escribe algo para ver la vista previa…</span>';
+                el.innerHTML = '<div class="msg-line"><span style="color:#6e6e83;font-size:.8rem;">Escribe algo para ver la vista previa…</span></div>';
+                applyBox();
                 return;
             }
 
@@ -300,7 +419,8 @@
             html += `<span class="msg-colon-inline">:</span>`;
             html += `<span class="msg-text-inline">${parseText(text)}</span>`;
 
-            el.innerHTML = html;
+            el.innerHTML = `<div class="msg-line">${html}</div>`;
+            applyBox();
         }
 
 
@@ -314,13 +434,17 @@
 
             const el = document.getElementById('msgRender');
             const bgColor = getBgColor(); // null if transparent
-            const { radius } = getExportOpts();
+            const radius = getRadius();
             const SCALE = 3;
 
-            // Fijamos el ancho en px enteros mientras se captura: con "ajustar al texto"
-            // el ancho es fraccionario y html2canvas podría partir la última palabra.
+            // Fijamos ancho y alto en px enteros mientras se captura: así el PNG mide
+            // exactamente lo que muestran los campos, y con ancho automático (fraccionario)
+            // html2canvas no parte la última palabra.
+            const r = el.getBoundingClientRect();
             const prevWidth = el.style.width;
-            el.style.width = Math.ceil(el.getBoundingClientRect().width) + 'px';
+            const prevHeight = el.style.height;
+            el.style.width = Math.ceil(r.width) + 'px';
+            el.style.height = Math.ceil(r.height) + 'px';
 
             let shot;
             try {
@@ -334,6 +458,7 @@
                 });
             } finally {
                 el.style.width = prevWidth;
+                el.style.height = prevHeight;
             }
 
             if (!radius) return shot;
